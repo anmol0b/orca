@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { parse } from 'yaml'
 
-import { HERMES_PLUGIN_NAME } from './hermes-managed-plugin-source'
+import { HERMES_CLIENT_ENV_PASSTHROUGH, HERMES_PLUGIN_NAME } from './hermes-managed-plugin-source'
 import { updateHermesPluginDocument } from './hermes-config-document'
 
 export type HermesConfig = Record<string, unknown>
@@ -74,6 +74,47 @@ export function disablePlugin(config: HermesConfig): HermesConfig {
   }
   next.plugins = plugins
   return next
+}
+
+// Why: a shared Hermes gateway only binds a session's client env names its profile passes through.
+function enableClientEnvPassthrough(config: HermesConfig): HermesConfig {
+  const terminal = isRecord(config.terminal) ? config.terminal : {}
+  const passthrough = asStringArray(terminal.client_env_passthrough) ?? []
+  const missing = HERMES_CLIENT_ENV_PASSTHROUGH.filter((name) => !passthrough.includes(name))
+  if (missing.length === 0) {
+    return config
+  }
+  return {
+    ...config,
+    terminal: { ...terminal, client_env_passthrough: [...passthrough, ...missing] }
+  }
+}
+
+function disableClientEnvPassthrough(config: HermesConfig): HermesConfig {
+  if (!isRecord(config.terminal)) {
+    return config
+  }
+  const passthrough = asStringArray(config.terminal.client_env_passthrough)
+  if (!passthrough?.some((name) => HERMES_CLIENT_ENV_PASSTHROUGH.includes(name))) {
+    return config
+  }
+  return {
+    ...config,
+    terminal: {
+      ...config.terminal,
+      client_env_passthrough: passthrough.filter(
+        (name) => !HERMES_CLIENT_ENV_PASSTHROUGH.includes(name)
+      )
+    }
+  }
+}
+
+export function installOrcaStatusConfig(config: HermesConfig): HermesConfig {
+  return enableClientEnvPassthrough(enablePlugin(config))
+}
+
+export function removeOrcaStatusConfig(config: HermesConfig): HermesConfig {
+  return disableClientEnvPassthrough(disablePlugin(config))
 }
 
 export function updateConfigContent(

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { execFile, execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -72,6 +72,68 @@ describe('HermesHookService', () => {
     expect(config.model).toBe('test-model')
     expect(config.plugins.enabled).toEqual(['disk-cleanup', _internals.HERMES_PLUGIN_NAME])
     expect(config.plugins.disabled).toEqual([])
+  })
+
+  it('passes pane identity through Hermes client env without dropping user entries', () => {
+    const configPath = join(homeDir, 'config.yaml')
+    writeFileSync(
+      configPath,
+      [
+        'terminal:',
+        '  backend: local',
+        '  client_env_passthrough:',
+        '    - MY_VAR # mine',
+        '    - ORCA_TAB_ID',
+        'plugins:',
+        '  enabled: [other]',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+    const service = new HermesHookService()
+
+    service.install()
+    const installed = readFileSync(configPath, 'utf-8')
+    expect(parse(installed).terminal).toEqual({
+      backend: 'local',
+      client_env_passthrough: [
+        'MY_VAR',
+        'ORCA_TAB_ID',
+        'ORCA_AGENT_PANE',
+        'ORCA_AGENT_LAUNCH',
+        'ORCA_WORKTREE_ID',
+        'ORCA_AGENT_HOOK_ENDPOINT',
+        'ORCA_AGENT_HOOK_ENV',
+        'ORCA_AGENT_HOOK_VERSION'
+      ]
+    })
+    expect(installed).toContain('- MY_VAR # mine')
+    service.install()
+    expect(readFileSync(configPath, 'utf-8')).toBe(installed)
+
+    service.remove()
+    const removed = readFileSync(configPath, 'utf-8')
+    expect(parse(removed)).toEqual({
+      terminal: { backend: 'local', client_env_passthrough: ['MY_VAR'] },
+      plugins: { enabled: ['other'] }
+    })
+    expect(removed).toContain('- MY_VAR # mine')
+  })
+
+  it('adds the passthrough when a rewritten plugin list runs into a closing comment', () => {
+    const configPath = join(homeDir, 'config.yaml')
+    writeFileSync(
+      configPath,
+      'plugins:\n  disabled:\n    - keep\n    - orca-status # managed entry\n# End notes\n'
+    )
+
+    expect(new HermesHookService().install().state).toBe('installed')
+    const installed = readFileSync(configPath, 'utf-8')
+    expect(parse(installed)).toEqual({
+      plugins: { disabled: ['keep'], enabled: ['orca-status'] },
+      terminal: { client_env_passthrough: expect.arrayContaining(['ORCA_AGENT_PANE']) }
+    })
+    expect(installed.split('# End notes')).toHaveLength(2)
   })
 
   it('refuses malformed plugin lists during install', () => {
@@ -222,6 +284,139 @@ describe('HermesHookService', () => {
         user_message: 'make Hermes good'
       }
     })
+  })
+
+  it('attributes each shared-gateway session to its own pane, not the daemon pane', async () => {
+    const pythonAvailable = spawnSync('python3', ['--version'], { encoding: 'utf-8' }).status === 0
+    if (!pythonAvailable) {
+      return
+    }
+    new HermesHookService().install()
+    // Mirrors Hermes 0.22's agent.session_client_env: a session's client env is bound per turn.
+    const hermesRoot = join(homeDir, 'hermes-src')
+    mkdirSync(join(hermesRoot, 'agent'), { recursive: true })
+    writeFileSync(join(hermesRoot, 'agent', '__init__.py'), '')
+    writeFileSync(
+      join(hermesRoot, 'agent', 'session_client_env.py'),
+      [
+        'from contextlib import contextmanager',
+        'from contextvars import ContextVar',
+        "_BOUND = ContextVar('session_client_env', default=None)",
+        '@contextmanager',
+        'def client_env_scope(env):',
+        '    token = _BOUND.set(env)',
+        '    try:',
+        '        yield',
+        '    finally:',
+        '        _BOUND.reset(token)',
+        'def bound_client_env():',
+        '    return _BOUND.get()'
+      ].join('\n')
+    )
+
+    const received: Record<string, unknown>[] = []
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      req.on('end', () => {
+        received.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')))
+        res.writeHead(204)
+        res.end()
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        throw new Error('server did not bind to a TCP port')
+      }
+      const endpointPath = join(homeDir, 'endpoint.env')
+      writeFileSync(
+        endpointPath,
+        `ORCA_AGENT_HOOK_PORT=${address.port}\nORCA_AGENT_HOOK_TOKEN=token-1\n`
+      )
+      const initPath = join(homeDir, 'plugins', _internals.HERMES_PLUGIN_NAME, '__init__.py')
+      const pane = (id: string) =>
+        `{"ORCA_AGENT_PANE": "tab-${id}:pane-${id}", "ORCA_AGENT_LAUNCH": "launch-${id}", "ORCA_TAB_ID": "tab-${id}", "ORCA_WORKTREE_ID": "wt-${id}", "ORCA_AGENT_HOOK_ENDPOINT": ${JSON.stringify(endpointPath)}}`
+      const script = [
+        'import importlib.util',
+        'from agent.session_client_env import client_env_scope',
+        `spec = importlib.util.spec_from_file_location("orca_status", ${JSON.stringify(initPath)})`,
+        'mod = importlib.util.module_from_spec(spec)',
+        'spec.loader.exec_module(mod)',
+        'class Ctx:',
+        '    def __init__(self): self.hooks = {}',
+        '    def register_hook(self, name, callback): self.hooks[name] = callback',
+        'ctx = Ctx()',
+        'mod.register(ctx)',
+        `with client_env_scope(${pane('B')}):`,
+        '    ctx.hooks["pre_llm_call"](session_id="sess-B", user_message="from B")',
+        `with client_env_scope(${pane('C')}):`,
+        '    ctx.hooks["pre_tool_call"](session_id="sess-C", tool_name="patch")',
+        '# The gateway starts and finalizes sessions outside their bound turns.',
+        'ctx.hooks["on_session_reset"](session_id="sess-D", platform="local")',
+        'ctx.hooks["on_session_finalize"](session_id="sess-B", platform="local")',
+        '# A non-Orca shell attached to the same gateway.',
+        'with client_env_scope({"PATH": "/usr/bin"}):',
+        '    ctx.hooks["pre_llm_call"](session_id="sess-X", user_message="not a pane")'
+      ].join('\n')
+      await new Promise<void>((resolve, reject) => {
+        // The Python hook calls this HTTP server; synchronous execution would deadlock its response.
+        execFile(
+          'python3',
+          ['-c', script],
+          {
+            env: {
+              ...process.env,
+              PYTHONPATH: hermesRoot,
+              ORCA_AGENT_HOOK_PORT: String(address.port),
+              ORCA_AGENT_HOOK_TOKEN: 'token-1',
+              ORCA_AGENT_HOOK_ENDPOINT: '',
+              ORCA_PANE_KEY: 'tab-A:pane-A',
+              ORCA_AGENT_PANE: 'tab-A:pane-A',
+              ORCA_AGENT_LAUNCH_TOKEN: 'launch-A',
+              ORCA_TAB_ID: 'tab-A',
+              ORCA_WORKTREE_ID: 'wt-A'
+            },
+            encoding: 'utf-8',
+            timeout: 15_000
+          },
+          (error) => (error ? reject(error) : resolve())
+        )
+      })
+    } finally {
+      server.close()
+    }
+
+    expect(
+      received.map(({ paneKey, launchToken, tabId, worktreeId, payload }) => ({
+        paneKey,
+        launchToken,
+        tabId,
+        worktreeId,
+        payload
+      }))
+    ).toMatchObject([
+      {
+        paneKey: 'tab-B:pane-B',
+        launchToken: 'launch-B',
+        tabId: 'tab-B',
+        worktreeId: 'wt-B',
+        payload: { hook_event_name: 'pre_llm_call', session_id: 'sess-B' }
+      },
+      {
+        paneKey: 'tab-C:pane-C',
+        launchToken: 'launch-C',
+        tabId: 'tab-C',
+        worktreeId: 'wt-C',
+        payload: { hook_event_name: 'pre_tool_call', session_id: 'sess-C' }
+      },
+      {
+        paneKey: 'tab-B:pane-B',
+        tabId: 'tab-B',
+        payload: { hook_event_name: 'on_session_finalize', session_id: 'sess-B' }
+      }
+    ])
   })
 
   it('bounds generated plugin payload normalization before JSON encoding', () => {

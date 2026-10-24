@@ -1,3 +1,8 @@
+import {
+  ORCA_SCRUB_SAFE_LAUNCH_ENV,
+  ORCA_SCRUB_SAFE_PANE_ENV
+} from '../../shared/agent-hook-scrub-safe-env'
+
 export const HERMES_PLUGIN_NAME = 'orca-status'
 export const HERMES_PLUGIN_MARKER = 'Managed by Orca. Do not edit; changes may be overwritten.'
 
@@ -13,6 +18,19 @@ export const HERMES_EVENTS = [
   'on_session_finalize',
   'on_session_reset'
 ] as const
+
+// Why: Hermes drops client env names containing KEY/TOKEN, so pane identity travels as its aliases.
+const HERMES_SESSION_ENV = {
+  ORCA_PANE_KEY: ORCA_SCRUB_SAFE_PANE_ENV,
+  ORCA_AGENT_LAUNCH_TOKEN: ORCA_SCRUB_SAFE_LAUNCH_ENV,
+  ORCA_TAB_ID: 'ORCA_TAB_ID',
+  ORCA_WORKTREE_ID: 'ORCA_WORKTREE_ID',
+  ORCA_AGENT_HOOK_ENDPOINT: 'ORCA_AGENT_HOOK_ENDPOINT',
+  ORCA_AGENT_HOOK_ENV: 'ORCA_AGENT_HOOK_ENV',
+  ORCA_AGENT_HOOK_VERSION: 'ORCA_AGENT_HOOK_VERSION'
+} as const
+
+export const HERMES_CLIENT_ENV_PASSTHROUGH: readonly string[] = Object.values(HERMES_SESSION_ENV)
 
 export function getPluginManifest(): string {
   return [
@@ -58,6 +76,10 @@ SELECTED_KEYS = {
     "on_session_finalize": ("session_id", "platform"),
     "on_session_reset": ("session_id", "platform"),
 }
+SESSION_ENV = ${JSON.stringify(HERMES_SESSION_ENV)}
+NO_PANE = {name: "" for name in SESSION_ENV}
+# Why: the shared gateway fires finalize/reset outside a session's bound turn, so remember its pane.
+_SESSION_ENVS: dict[str, dict[str, str]] = {}
 
 
 def _truncate_string(value: str) -> str:
@@ -97,8 +119,28 @@ def _jsonable(value: Any, depth: int = 0, budget: Optional[list[int]] = None) ->
     return _truncate_string(repr(value))
 
 
-def _endpoint_env() -> dict[str, str]:
+def _session_client_env(session_id: str) -> Optional[dict[str, str]]:
+    # Why: a Hermes 0.22+ gateway runs every pane's session, so its os.environ names only the
+    # pane that started it; each session's client env names its own pane.
+    try:
+        from agent.session_client_env import bound_client_env
+    except ImportError:
+        return None
+    bound = bound_client_env()
+    if bound is None:
+        # Messaging, cron and session-start events are no pane's unless one of its turns named it.
+        return _SESSION_ENVS.get(session_id, NO_PANE)
+    env = {name: bound.get(client_name, "") for name, client_name in SESSION_ENV.items()}
+    if session_id:
+        _SESSION_ENVS[session_id] = env
+    return env
+
+
+def _endpoint_env(session_id: str) -> dict[str, str]:
     env = dict(os.environ)
+    session_env = _session_client_env(session_id)
+    if session_env is not None:
+        env.update(session_env)
     endpoint = env.get("ORCA_AGENT_HOOK_ENDPOINT", "")
     if endpoint and os.path.isfile(endpoint):
         try:
@@ -118,7 +160,7 @@ def _endpoint_env() -> dict[str, str]:
 
 
 def _post_to_orca(payload: dict[str, Any]) -> None:
-    env = _endpoint_env()
+    env = _endpoint_env(str(payload.get("session_id") or ""))
     port = env.get("ORCA_AGENT_HOOK_PORT", "")
     token = env.get("ORCA_AGENT_HOOK_TOKEN", "")
     pane_key = env.get("ORCA_PANE_KEY", "")
@@ -173,6 +215,8 @@ def _payload_for_event(event_name: str, kwargs: dict[str, Any]) -> dict[str, Any
 def _make_hook(event_name: str) -> Callable[..., None]:
     def _hook(**kwargs: Any) -> None:
         _post_to_orca(_payload_for_event(event_name, kwargs))
+        if event_name == "on_session_finalize":
+            _SESSION_ENVS.pop(str(kwargs.get("session_id") or ""), None)
 
     return _hook
 
