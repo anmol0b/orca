@@ -78,7 +78,7 @@ SELECTED_KEYS = {
 }
 SESSION_ENV = ${JSON.stringify(HERMES_SESSION_ENV)}
 NO_PANE = {name: "" for name in SESSION_ENV}
-# Why: the shared gateway fires finalize/reset outside a session's bound turn, so remember its pane.
+# Finalize/reset fire outside a session's bound turn, so remember each session's pane.
 _SESSION_ENVS: dict[str, dict[str, str]] = {}
 
 
@@ -120,15 +120,13 @@ def _jsonable(value: Any, depth: int = 0, budget: Optional[list[int]] = None) ->
 
 
 def _session_client_env(session_id: str) -> Optional[dict[str, str]]:
-    # Why: a Hermes 0.22+ gateway runs every pane's session, so its os.environ names only the
-    # pane that started it; each session's client env names its own pane.
+    # Why: a Hermes 0.22+ gateway runs every pane's session; its os.environ is the starting pane's.
     try:
         from agent.session_client_env import bound_client_env
     except ImportError:
         return None
     bound = bound_client_env()
     if bound is None:
-        # Messaging, cron and session-start events are no pane's unless one of its turns named it.
         return _SESSION_ENVS.get(session_id, NO_PANE)
     env = {name: bound.get(client_name, "") for name, client_name in SESSION_ENV.items()}
     if session_id:

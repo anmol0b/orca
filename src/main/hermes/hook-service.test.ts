@@ -388,15 +388,7 @@ describe('HermesHookService', () => {
       server.close()
     }
 
-    expect(
-      received.map(({ paneKey, launchToken, tabId, worktreeId, payload }) => ({
-        paneKey,
-        launchToken,
-        tabId,
-        worktreeId,
-        payload
-      }))
-    ).toMatchObject([
+    expect(received).toMatchObject([
       {
         paneKey: 'tab-B:pane-B',
         launchToken: 'launch-B',

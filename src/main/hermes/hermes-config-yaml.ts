@@ -77,44 +77,28 @@ export function disablePlugin(config: HermesConfig): HermesConfig {
 }
 
 // Why: a shared Hermes gateway only binds a session's client env names its profile passes through.
-function enableClientEnvPassthrough(config: HermesConfig): HermesConfig {
-  const terminal = isRecord(config.terminal) ? config.terminal : {}
+export function installOrcaStatusConfig(config: HermesConfig): HermesConfig {
+  const next = enablePlugin(config)
+  const terminal = isRecord(next.terminal) ? next.terminal : {}
   const passthrough = asStringArray(terminal.client_env_passthrough) ?? []
   const missing = HERMES_CLIENT_ENV_PASSTHROUGH.filter((name) => !passthrough.includes(name))
-  if (missing.length === 0) {
-    return config
-  }
   return {
-    ...config,
+    ...next,
     terminal: { ...terminal, client_env_passthrough: [...passthrough, ...missing] }
   }
 }
 
-function disableClientEnvPassthrough(config: HermesConfig): HermesConfig {
-  if (!isRecord(config.terminal)) {
-    return config
-  }
-  const passthrough = asStringArray(config.terminal.client_env_passthrough)
-  if (!passthrough?.some((name) => HERMES_CLIENT_ENV_PASSTHROUGH.includes(name))) {
-    return config
-  }
-  return {
-    ...config,
-    terminal: {
-      ...config.terminal,
-      client_env_passthrough: passthrough.filter(
-        (name) => !HERMES_CLIENT_ENV_PASSTHROUGH.includes(name)
-      )
-    }
-  }
-}
-
-export function installOrcaStatusConfig(config: HermesConfig): HermesConfig {
-  return enableClientEnvPassthrough(enablePlugin(config))
-}
-
 export function removeOrcaStatusConfig(config: HermesConfig): HermesConfig {
-  return disableClientEnvPassthrough(disablePlugin(config))
+  const next = disablePlugin(config)
+  if (!isRecord(next.terminal) || next.terminal.client_env_passthrough === undefined) {
+    return next
+  }
+  const passthrough = asStringArray(next.terminal.client_env_passthrough)
+  if (passthrough === null) {
+    return next
+  }
+  const kept = passthrough.filter((name) => !HERMES_CLIENT_ENV_PASSTHROUGH.includes(name))
+  return { ...next, terminal: { ...next.terminal, client_env_passthrough: kept } }
 }
 
 export function updateConfigContent(
@@ -129,7 +113,7 @@ export function updateConfigContent(
   if (isDeepStrictEqual(parsed.config, next)) {
     return { content: content ?? '' }
   }
-  return updateHermesPluginDocument(content ?? '', next)
+  return updateHermesPluginDocument(content ?? '', parsed.config, next)
 }
 
 export function getConfigEnablement(config: HermesConfig): {

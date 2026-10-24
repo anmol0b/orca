@@ -60,6 +60,7 @@ function updateStringSequence(
 
 export function updateHermesPluginDocument(
   content: string,
+  previous: HermesConfig,
   next: HermesConfig
 ): { content: string | null; detail?: string } {
   try {
@@ -88,10 +89,9 @@ export function updateHermesPluginDocument(
       throw new Error('Cannot safely edit a merged Hermes root')
     }
 
-    const current: Record<string, unknown> = document.toJS()
     for (const [sectionKey, keys] of HERMES_EDITED_LISTS) {
       const nextSection = next[sectionKey]
-      if (isDeepStrictEqual(current[sectionKey], nextSection)) {
+      if (isDeepStrictEqual(previous[sectionKey], nextSection)) {
         continue
       }
       let section = document.get(sectionKey, true)
