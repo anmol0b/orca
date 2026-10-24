@@ -102,25 +102,25 @@ export function updateHermesPluginDocument(
       if (!isMap(section)) {
         throw new Error(`Hermes ${sectionKey} must be a plain mapping`)
       }
-      // Aliases into a changed subtree could silently change unrelated settings.
-      visit(section, {
-        Node: (_key, node) => {
-          if (isAlias(node) || node.anchor || node.tag) {
-            throw new Error(`Cannot safely edit Hermes ${sectionKey} with anchors, aliases or tags`)
-          }
-        },
-        Pair: (_key, pair) => {
-          if (isScalar(pair.key) && pair.key.value === '<<') {
-            throw new Error(`Cannot safely edit Hermes ${sectionKey} with YAML merge keys`)
-          }
-        }
-      })
+      if (section.anchor || section.tag || section.has('<<')) {
+        throw new Error(`Cannot safely edit Hermes ${sectionKey} with anchors, tags or merge keys`)
+      }
       for (const key of keys) {
         const existing = section.get(key, true)
+        if (existing === undefined) {
+          continue
+        }
+        // Aliases into an edited list could silently change unrelated settings.
+        visit(existing, (_key, node) => {
+          if (isAlias(node) || (isNode(node) && (node.anchor || node.tag))) {
+            throw new Error(
+              `Cannot safely edit Hermes ${sectionKey}.${key} with anchors, aliases or tags`
+            )
+          }
+        })
         if (
-          existing !== undefined &&
-          (!isSeq(existing) ||
-            existing.items.some((item) => !isScalar(item) || typeof item.value !== 'string'))
+          !isSeq(existing) ||
+          existing.items.some((item) => !isScalar(item) || typeof item.value !== 'string')
         ) {
           throw new Error(`Hermes ${sectionKey}.${key} must be a string list`)
         }
