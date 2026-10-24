@@ -21,7 +21,7 @@ vi.mock('./git/worktree', () => ({
 }))
 
 import {
-  recoverLocalWindowsWorktreeRemoval,
+  recoverPartialLocalWorktreeRemoval,
   removeStaleLocalWorktreeRegistration
 } from './local-worktree-removal-recovery'
 
@@ -35,7 +35,7 @@ async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>):
   }
 }
 
-describe('recoverLocalWindowsWorktreeRemoval', () => {
+describe('recoverPartialLocalWorktreeRemoval', () => {
   beforeEach(() => {
     gitExecFileAsyncMock.mockReset()
     listWorktreesStrictMock.mockReset()
@@ -55,7 +55,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
         stderr: "error: failed to delete 'C:/repo/worktree/delete-e2e-held-cwd': Permission denied"
       })
 
-      const result = await recoverLocalWindowsWorktreeRemoval({
+      const result = await recoverPartialLocalWorktreeRemoval({
         error,
         force: true,
         canonicalWorktreePath: 'C:/repo/worktree/delete-e2e-held-cwd',
@@ -89,7 +89,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
           "error: failed to delete 'C:/repo/worktree/delete-e2e-held-cwd': Directory not empty"
       })
 
-      const result = await recoverLocalWindowsWorktreeRemoval({
+      const result = await recoverPartialLocalWorktreeRemoval({
         error,
         force: false,
         canonicalWorktreePath: 'C:/repo/worktree/delete-e2e-held-cwd',
@@ -121,7 +121,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
       const watcherError = new Error('file watcher process did not exit after termination deadline')
 
       await expect(
-        recoverLocalWindowsWorktreeRemoval({
+        recoverPartialLocalWorktreeRemoval({
           error: new Error('git worktree remove failed'),
           force: true,
           canonicalWorktreePath: 'C:/repo/worktree/feature',
@@ -140,7 +140,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
 
   it('recovers localized Windows failures after Git already removed the registration', async () => {
     await withPlatform('win32', async () => {
-      const result = await recoverLocalWindowsWorktreeRemoval({
+      const result = await recoverPartialLocalWorktreeRemoval({
         error: Object.assign(new Error('git worktree remove failed'), {
           stderr: "Fehler: 'C:/repo/worktree/feature' konnte nicht gelöscht werden"
         }),
@@ -171,7 +171,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
       ])
 
       await expect(
-        recoverLocalWindowsWorktreeRemoval({
+        recoverPartialLocalWorktreeRemoval({
           error: Object.assign(new Error('git worktree remove failed'), {
             stderr: 'Fehler: unerwarteter Git-Zustand'
           }),
@@ -188,25 +188,30 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
     })
   })
 
-  it('does not recover partial filesystem deletion wording off Windows', async () => {
-    await withPlatform('linux', async () => {
-      const error = Object.assign(new Error('git worktree remove failed'), {
-        stderr: "error: failed to delete 'C:/repo/worktree/delete-e2e-held-cwd': Permission denied"
+  it('finishes a macOS deletion Git deregistered before failing with Directory not empty', async () => {
+    await withPlatform('darwin', async () => {
+      const closeWatcher = vi.fn().mockResolvedValue(undefined)
+
+      const result = await recoverPartialLocalWorktreeRemoval({
+        error: Object.assign(new Error('git worktree remove failed'), {
+          stderr:
+            "error: failed to delete '/Users/dev/orca/workspaces/feature': Directory not empty"
+        }),
+        force: true,
+        canonicalWorktreePath: '/Users/dev/orca/workspaces/feature',
+        repoPath: '/Users/dev/repo',
+        localWorktreeGitOptions: {},
+        registeredWorktree: { branch: 'refs/heads/feature', head: 'abc123' },
+        deleteBranch: true,
+        closeWatcher
       })
 
-      await expect(
-        recoverLocalWindowsWorktreeRemoval({
-          error,
-          force: true,
-          canonicalWorktreePath: 'C:/repo/worktree/delete-e2e-held-cwd',
-          repoPath: 'C:/repo',
-          localWorktreeGitOptions: {},
-          registeredWorktree: { branch: 'refs/heads/delete-e2e-held-cwd', head: 'abc123' },
-          deleteBranch: true,
-          closeWatcher: vi.fn().mockResolvedValue(undefined)
-        })
-      ).resolves.toBeUndefined()
-      expect(removeLocalWorktreePathMock).not.toHaveBeenCalled()
+      expect(closeWatcher).toHaveBeenCalledWith('/Users/dev/orca/workspaces/feature')
+      expect(removeLocalWorktreePathMock).toHaveBeenCalledWith(
+        '/Users/dev/orca/workspaces/feature',
+        {}
+      )
+      expect(result).toEqual({ preservedBranch: { branchName: 'feature', head: 'abc123' } })
     })
   })
 
@@ -221,7 +226,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
       const closeWatcher = vi.fn().mockResolvedValue(undefined)
 
       await expect(
-        recoverLocalWindowsWorktreeRemoval({
+        recoverPartialLocalWorktreeRemoval({
           error: Object.assign(new Error('git worktree remove failed'), {
             stderr: 'error: failed to delete deep/file.txt: Filename too long'
           }),
@@ -261,7 +266,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
         const closeWatcher = vi.fn().mockResolvedValue(undefined)
 
         await expect(
-          recoverLocalWindowsWorktreeRemoval({
+          recoverPartialLocalWorktreeRemoval({
             error: Object.assign(new Error('git worktree remove failed'), { stderr }),
             force: true,
             canonicalWorktreePath: 'C:/repo/worktree/feature',
@@ -286,7 +291,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
       const closeWatcher = vi.fn().mockResolvedValue(undefined)
 
       await expect(
-        recoverLocalWindowsWorktreeRemoval({
+        recoverPartialLocalWorktreeRemoval({
           error: Object.assign(new Error('git worktree remove failed'), {
             stderr: "error: failed to delete 'C:/repo/worktree/feature': Directory not empty"
           }),
