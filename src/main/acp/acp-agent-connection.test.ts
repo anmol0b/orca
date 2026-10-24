@@ -121,6 +121,7 @@ describe('ACP process-owning connection', () => {
     })
     const signal = await permission.promise
     child.stderr.write('provider failed\n')
+    expect(connection.exitStatus).toBeNull()
     child.emit('exit', 7, null)
     child.emit('close', 7, null)
     await rejected
@@ -132,6 +133,7 @@ describe('ACP process-owning connection', () => {
       expected: false,
       exit: { code: 7, signal: null, processless: false }
     })
+    expect(connection.exitStatus).toEqual({ code: 7, signal: null, processless: false })
     const late = vi.fn()
     connection.onExit(late)
     expect(late).toHaveBeenCalledOnce()

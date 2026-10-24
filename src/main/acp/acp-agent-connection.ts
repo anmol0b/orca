@@ -42,6 +42,7 @@ export class AcpAgentConnection extends AcpSessionRuntime {
   private readonly managed: ManagedProviderProcess
   private readonly lifecycle: { closing: boolean; error?: Error }
   private readonly diagnoseLifecycle: (message: string) => void
+  private observedExit: ProviderProcessExit | null = null
   readonly spawned: Promise<void>
 
   constructor(
@@ -138,6 +139,7 @@ export class AcpAgentConnection extends AcpSessionRuntime {
       super.close(new AcpConnectionClosedError('The agent printed a sign-in link Orca cannot read'))
     child.stderr.on('error', (error) => super.close(error))
     managed.onExit((exit) => {
+      this.observedExit = exit
       const error =
         lifecycle.error ??
         new AcpConnectionClosedError(managed.stderrTail().trim() || `${launch.command} exited`)
@@ -175,6 +177,11 @@ export class AcpAgentConnection extends AcpSessionRuntime {
 
   stderrTail(): string {
     return this.managed.stderrTail().trim()
+  }
+
+  /** Null until the process is seen to exit. */
+  get exitStatus(): ProviderProcessExit | null {
+    return this.observedExit
   }
 
   onExit(listener: (exit: ProviderProcessExit) => void): void {

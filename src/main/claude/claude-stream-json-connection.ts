@@ -20,6 +20,7 @@ import {
 } from './claude-agent-sdk-user-message-queue'
 import type { ClaudeStructuredSdkOptions } from './claude-structured-launch-resolution'
 import { providerStderrForDisplay } from '../provider-process/provider-spawn-failure-report'
+import { providerExitStatusText } from '../provider-process/provider-process-exit-status'
 import { withMissingProviderExecutable } from '../provider-process/provider-executable-missing'
 
 export { ClaudeControlRequestError }
@@ -94,14 +95,9 @@ type ExitStatus = { code: number | null; signal: NodeJS.Signals | null }
 function exitError(stderrTail: string, status: ExitStatus | null, cause?: Error): Error {
   const detail = providerStderrForDisplay(stderrTail).trim()
   // Retain exit status and stderr through wrappers for refused-start diagnostics.
-  const how =
-    status?.signal !== null && status?.signal !== undefined
-      ? ` (signal ${status.signal})`
-      : status?.code !== null && status?.code !== undefined
-        ? ` (code ${status.code})`
-        : ''
-  const message = `claude stream-json exited${how}${detail ? `: ${detail}` : ''}`
-  const diagnostic = providerDiagnostic([how.trim(), detail].filter(Boolean).join('\n'), 'log')
+  const how = providerExitStatusText(status)
+  const message = `claude stream-json exited${how ? ` ${how}` : ''}${detail ? `: ${detail}` : ''}`
+  const diagnostic = providerDiagnostic([how, detail].filter(Boolean).join('\n'), 'log')
   return withProviderDiagnostic(
     cause ? new Error(message, { cause }) : new Error(message),
     diagnostic
