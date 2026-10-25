@@ -147,7 +147,8 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
                 : sprintJql
               return searchWithinLimit(query)
             },
-            favourite || exactSavedJql ? 'jql' : 'input'
+            favourite || exactSavedJql ? 'jql' : 'input',
+            jiraProjectFilter?.key
           ).then((result) => ({ ...result, error: null }))
         : jiraProjectFilter
           ? searchWithinLimit(

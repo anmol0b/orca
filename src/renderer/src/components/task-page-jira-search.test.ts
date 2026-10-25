@@ -34,6 +34,15 @@ describe('searchTaskPageJiraIssues', () => {
     expect(search.mock.calls).toEqual([['key = "ABC-1"']])
   })
 
+  it('looks up a bare issue number in the selected project, then falls back to its text', async () => {
+    const search = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([ISSUE])
+    await expect(searchTaskPageJiraIssues('400', search, 'input', 'PROJ')).resolves.toEqual({
+      issues: [ISSUE],
+      jqlRejection: null
+    })
+    expect(search.mock.calls).toEqual([['key = "PROJ-400"'], ['text ~ "400*"']])
+  })
+
   it('retries a key-shaped search as text when no issue has that key', async () => {
     const search = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([ISSUE])
     await expect(searchTaskPageJiraIssues('utf-8', search)).resolves.toEqual({

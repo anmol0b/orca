@@ -153,6 +153,25 @@ describe('useTaskPageJiraListEffects refresh wiring', () => {
     expect(listJiraIssues).not.toHaveBeenCalled()
   })
 
+  it('looks up a bare issue number in the selected project', async () => {
+    const model = createModel()
+    model.appliedJiraSearch = '400'
+    model.jiraProjectFilter = { id: '10', key: 'ALP', name: 'Alpha', siteId: 'site-a' }
+    renderHook(() => useTaskPageJiraListEffects(model))
+    await waitFor(() =>
+      expect(searchJiraIssues).toHaveBeenNthCalledWith(
+        1,
+        'project = "10" AND (key = "ALP-400")',
+        50,
+        {
+          sourceContext: null,
+          siteId: 'site-a',
+          force: false
+        }
+      )
+    )
+  })
+
   it('reports a saved query that exceeds the request limit after sprint composition', async () => {
     const model = createModel()
     model.appliedJiraSearch = `key in (${Array.from({ length: 1030 }, (_, index) => `APP-${index + 1}`).join(',')})`

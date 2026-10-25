@@ -7,9 +7,10 @@ import { getJiraBadRequestReason } from './task-page-jira-load-state'
 
 export async function searchJiraIssuesByKeyOrText(
   input: string,
-  search: (jql: string) => Promise<JiraIssue[]>
+  search: (jql: string) => Promise<JiraIssue[]>,
+  projectKey?: string
 ): Promise<JiraIssue[]> {
-  const keyJql = buildJiraIssueKeyJql(input)
+  const keyJql = buildJiraIssueKeyJql(input, projectKey)
   if (keyJql) {
     // Key-shaped text such as utf-8 can yield an empty result or 400; neither rules out a text match.
     const issues = await search(keyJql).catch((error: unknown) => {
