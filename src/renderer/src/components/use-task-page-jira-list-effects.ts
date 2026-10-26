@@ -101,6 +101,10 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     if (!jiraConnected || jiraSavedFiltersLoading || jiraQuickFiltersLoading) {
       return
     }
+    setJiraLoading(true)
+    setJiraError(null)
+    setJiraJqlRejection(null)
+    setJiraErrorDetailsOpen(false)
     if (jiraKeyLookupProjects && jiraProjectsLoading) {
       return
     }
@@ -108,10 +112,6 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     previousJiraRefreshNonceRef.current = jiraRefreshNonce
     let cancelled = false
     let queryTooLong = false
-    setJiraLoading(true)
-    setJiraError(null)
-    setJiraJqlRejection(null)
-    setJiraErrorDetailsOpen(false)
     const trimmed = jiraRemoteSearch.trim()
     const savedFilter = jiraSavedFilters.find((filter) => filter.id === jiraActiveSavedFilterId)
     const exactSavedJql = savedFilter?.jql === trimmed

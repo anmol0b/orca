@@ -179,6 +179,8 @@ describe('useTaskPageJiraListEffects refresh wiring', () => {
     model.appliedJiraSearch = '400'
     model.jiraProjectsLoading = true
     const { rerender } = renderHook(() => useTaskPageJiraListEffects(model))
+    expect(model.setJiraLoading).toHaveBeenLastCalledWith(true)
+    expect(searchJiraIssues).not.toHaveBeenCalled()
     model.availableJiraProjects = [
       { id: '10', key: 'ALP', name: 'Alpha' },
       { id: '20', key: 'BET', name: 'Beta' }
