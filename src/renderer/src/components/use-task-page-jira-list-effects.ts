@@ -1,6 +1,5 @@
 import { translate } from '@/i18n/i18n'
 import { isRuntimeProviderSearchQueryWithinLimit } from '@/runtime/runtime-provider-search-bounds'
-import { withCurrentSprintClause } from '../../../shared/jira/jira-jql-predicate'
 import {
   buildJiraStatusCatalog,
   getJiraStatusCatalogScopeKey
@@ -14,7 +13,8 @@ import {
   loadTaskPageJiraProjectStatusOrder
 } from '@/components/task-page-jira-status-order'
 import { createTaskPageJiraLoadFailureState } from '@/components/task-page-jira-load-state'
-import { searchTaskPageJiraIssues } from '@/components/task-page-jira-search'
+import { searchScopedTaskPageJiraIssues } from '@/components/task-page-jira-search'
+import { isBareJiraIssueNumber } from '../../../shared/jira/jira-search-input-jql'
 import { JIRA_ITEM_LIMIT } from './task-page-source-context'
 import { useTaskSearchDebouncedApply } from './task-page/use-task-search-debounced-apply'
 import { readLinkedJiraIssues } from './task-page-jira-linked-issues'
@@ -61,7 +61,9 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     jiraFavouriteFilter,
     setJiraStatusCatalog,
     setJiraProjectStatusOrder,
-    displayedJiraIssues
+    displayedJiraIssues,
+    availableJiraProjects,
+    jiraProjectsLoading
   } = model
   const statusOrderOwner = useMemo(
     () =>
@@ -85,6 +87,9 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
   }, [appliedJiraSearch, setTaskResumeState, taskResumeApplied, jiraSearchPersistReadyRef])
   const favourite = jiraHasWorkspace ? null : jiraFavouriteFilter
   const jiraRemoteSearch = jiraHasWorkspace ? '' : (favourite?.jql ?? appliedJiraSearch)
+  // Why: only bare-number searches use the project list, so its reloads don't refetch other searches.
+  const jiraKeyLookupProjects =
+    !jiraProjectFilter && isBareJiraIssueNumber(jiraRemoteSearch) ? availableJiraProjects : null
   const previousJiraRefreshNonceRef = useRef(jiraRefreshNonce)
   useEffect(() => {
     if (!taskResumeApplied) {
@@ -94,6 +99,9 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
       return
     }
     if (!jiraConnected || jiraSavedFiltersLoading || jiraQuickFiltersLoading) {
+      return
+    }
+    if (jiraKeyLookupProjects && jiraProjectsLoading) {
       return
     }
     const force = previousJiraRefreshNonceRef.current !== jiraRefreshNonce
@@ -138,17 +146,13 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     const request = jiraHasWorkspace
       ? readLinkedJiraIssues(linkedJiraIssueRefs, searchJiraIssues, jiraTaskSourceContext, force)
       : trimmed.length > 0
-        ? searchTaskPageJiraIssues(
+        ? searchScopedTaskPageJiraIssues(
             trimmed,
-            async (jql) => {
-              const sprintJql = jiraCurrentSprint ? withCurrentSprintClause(jql) : jql
-              const query = jiraProjectFilter
-                ? restrictJiraQueryToProject(sprintJql, jiraProjectFilter)
-                : sprintJql
-              return searchWithinLimit(query)
-            },
+            searchWithinLimit,
             favourite || exactSavedJql ? 'jql' : 'input',
-            jiraProjectFilter?.key
+            jiraCurrentSprint,
+            jiraProjectFilter,
+            jiraKeyLookupProjects
           ).then((result) => ({ ...result, error: null }))
         : jiraProjectFilter
           ? searchWithinLimit(
@@ -247,6 +251,8 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     linkedJiraIssueRefsSignature,
     jiraCurrentSprint,
     jiraProjectFilter,
+    jiraKeyLookupProjects,
+    jiraProjectsLoading,
     jiraRefreshNonce,
     jiraActiveSavedFilterId,
     jiraSavedFilters,

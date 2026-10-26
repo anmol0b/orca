@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { JiraIssue } from '../../../shared/jira/jira-types'
-import { searchTaskPageJiraIssues } from './task-page-jira-search'
+import { searchScopedTaskPageJiraIssues, searchTaskPageJiraIssues } from './task-page-jira-search'
 
 const ISSUE: JiraIssue = {
   id: '10001',
@@ -36,7 +36,7 @@ describe('searchTaskPageJiraIssues', () => {
 
   it('looks up a bare issue number in the selected project, then falls back to its text', async () => {
     const search = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([ISSUE])
-    await expect(searchTaskPageJiraIssues('400', search, 'input', 'PROJ')).resolves.toEqual({
+    await expect(searchTaskPageJiraIssues('400', search, 'input', ['PROJ'])).resolves.toEqual({
       issues: [ISSUE],
       jqlRejection: null
     })
@@ -203,4 +203,17 @@ it('surfaces invalid saved JQL without retrying it as a text search', async () =
   const search = vi.fn().mockRejectedValue(error)
   await expect(searchTaskPageJiraIssues('bad syntax', search, 'jql')).rejects.toBe(error)
   expect(search).toHaveBeenCalledTimes(1)
+})
+
+describe('searchScopedTaskPageJiraIssues', () => {
+  it('searches the text alone when the key lookup across projects exceeds the request limit', async () => {
+    const projects = Array.from({ length: 700 }, (_, index) => ({
+      id: String(index),
+      key: `PROJECT${index}`,
+      name: `Project ${index}`
+    }))
+    const search = vi.fn().mockResolvedValue([ISSUE])
+    await searchScopedTaskPageJiraIssues('400', search, 'input', false, null, projects)
+    expect(search.mock.calls).toEqual([['text ~ "400*"']])
+  })
 })

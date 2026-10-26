@@ -278,7 +278,7 @@ export function useSmartWorkspaceSecondarySearches({
           RESULT_LIMIT,
           { sourceContext: jiraSourceContext, siteId, signal: controller.signal }
         ),
-      jiraProject?.key
+      jiraProject ? [jiraProject.key] : undefined
     )
       .then((issues) => {
         if (!stale) {

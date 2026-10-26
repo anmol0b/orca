@@ -49,7 +49,9 @@ function createModel(): TaskPageLinearCollectionEffectsModel {
     jiraQuickFiltersLoading: false,
     setJiraStatusCatalog: vi.fn(),
     setJiraProjectStatusOrder: vi.fn(),
-    displayedJiraIssues: []
+    displayedJiraIssues: [],
+    availableJiraProjects: [],
+    jiraProjectsLoading: false
   }
   // SAFETY: the hook only reads the Jira fields above; the preceding pipeline model is intentionally not constructed in this isolated wiring test.
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the partial fixture intentionally models only fields read by this hook.
@@ -169,6 +171,25 @@ describe('useTaskPageJiraListEffects refresh wiring', () => {
           force: false
         }
       )
+    )
+  })
+
+  it('looks up a bare issue number in every listed project once the projects load', async () => {
+    const model = createModel()
+    model.appliedJiraSearch = '400'
+    model.jiraProjectsLoading = true
+    const { rerender } = renderHook(() => useTaskPageJiraListEffects(model))
+    model.availableJiraProjects = [
+      { id: '10', key: 'ALP', name: 'Alpha' },
+      { id: '20', key: 'BET', name: 'Beta' }
+    ]
+    model.jiraProjectsLoading = false
+    rerender()
+    await waitFor(() =>
+      expect(searchJiraIssues).toHaveBeenNthCalledWith(1, 'key in ("ALP-400", "BET-400")', 50, {
+        sourceContext: null,
+        force: false
+      })
     )
   })
 

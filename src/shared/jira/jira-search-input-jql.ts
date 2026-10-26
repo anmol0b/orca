@@ -24,11 +24,31 @@ export function mayBeJql(input: string): boolean {
   return JQL_OPERATOR_PATTERN.test(input.trim())
 }
 
-/** Exact-issue-key JQL when the input is key-shaped, or a bare number within `projectKey`. */
-export function buildJiraIssueKeyJql(input: string, projectKey?: string): string | null {
+export function isBareJiraIssueNumber(input: string): boolean {
+  return /^\d+$/.test(input.trim())
+}
+
+/** Exact-issue-key JQL when the input is key-shaped, or a bare number within each of `projectKeys`. */
+export function buildJiraIssueKeyJql(
+  input: string,
+  projectKeys: readonly string[] = []
+): string | null {
   const trimmed = input.trim()
-  const key = projectKey && /^\d+$/.test(trimmed) ? `${projectKey}-${trimmed}` : trimmed
-  return JIRA_ISSUE_KEY_PATTERN.test(key) ? `key = "${key.toUpperCase()}"` : null
+  const candidates = isBareJiraIssueNumber(trimmed)
+    ? projectKeys.map((projectKey) => `${projectKey}-${trimmed}`)
+    : [trimmed]
+  const keys = [
+    ...new Set(
+      candidates.filter((key) => JIRA_ISSUE_KEY_PATTERN.test(key)).map((key) => key.toUpperCase())
+    )
+  ]
+  if (keys.length === 0) {
+    return null
+  }
+  // Why: Jira Cloud skips missing keys in `key in`; Server may 400, which falls back to text search.
+  return keys.length === 1
+    ? `key = "${keys[0]}"`
+    : `key in (${keys.map((key) => `"${key}"`).join(', ')})`
 }
 
 /** Search issue text, ignoring key shape. Empty when no searchable words remain. */
