@@ -3,7 +3,7 @@ import { isRuntimeProviderSearchQueryWithinLimit } from '@/runtime/runtime-provi
 import {
   buildJiraStatusCatalog,
   getJiraStatusCatalogScopeKey
-} from './task-page-jira-status-catalog'
+} from './task-page/jira/task-page-jira-status-catalog'
 import type { TaskPageLinearCollectionEffectsModel } from './task-page/linear/use-task-page-linear-collection-effects'
 import { useEffect, useMemo, useRef } from 'react'
 import {
@@ -11,9 +11,9 @@ import {
   getTaskPageJiraStatusOrderScopeKey,
   getTaskPageJiraStatusOrderRuntimeScopeKey,
   loadTaskPageJiraProjectStatusOrder
-} from '@/components/task-page-jira-status-order'
+} from '@/components/task-page/jira/task-page-jira-status-order'
 import { createTaskPageJiraLoadFailureState } from '@/components/task-page/jira/task-page-jira-load-state'
-import { searchScopedTaskPageJiraIssues } from '@/components/task-page-jira-search'
+import { searchScopedTaskPageJiraIssues } from '@/components/task-page/jira/task-page-jira-search'
 import { isBareJiraIssueNumber } from '../../../shared/jira/jira-search-input-jql'
 import { JIRA_ITEM_LIMIT } from './task-page/task-page-source-context'
 import { useTaskSearchDebouncedApply } from './task-page/use-task-search-debounced-apply'
