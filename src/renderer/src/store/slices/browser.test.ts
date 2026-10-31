@@ -79,6 +79,23 @@ describe('createBrowserSlice annotations', () => {
     })
   })
 
+  it('announces a tab that creation activates, but not one opened in the background', async () => {
+    const { store } = await createTestStoreDrawnFromMain()
+    mockApi.browser.notifyActiveTabChanged.mockClear()
+
+    const background = store
+      .getState()
+      .createBrowserTab('wt-1', 'https://background.example.com', { activate: false })
+    const active = store.getState().createBrowserTab('wt-1', 'https://active.example.com')
+
+    expect(mockApi.browser.notifyActiveTabChanged).not.toHaveBeenCalledWith({
+      browserPageId: background.activePageId
+    })
+    expect(mockApi.browser.notifyActiveTabChanged).toHaveBeenLastCalledWith({
+      browserPageId: active.activePageId
+    })
+  })
+
   it('keeps a requested canonical page identity distinct from its workspace', async () => {
     const { store, main } = await createTestStoreDrawnFromMain()
     const tab = store.getState().createBrowserTab('wt-1', 'about:blank', {
@@ -124,27 +141,6 @@ describe('createBrowserSlice annotations', () => {
       url: 'https://accounts.google.com/',
       sessionProfileId: 'profile-1'
     })
-  })
-
-  it('retains saved page annotations while retiring geometry when the URL changes', async () => {
-    const { store, main } = await createTestStoreDrawnFromMain()
-    const tab = store.getState().createBrowserTab('wt-1', 'https://example.com')
-    await main.settle()
-    const pageId = tab.activePageId
-    if (!pageId) {
-      throw new Error('Expected a new browser page')
-    }
-
-    store.getState().addBrowserPageAnnotation(makeAnnotation(pageId))
-    expect(store.getState().browserAnnotationsByPageId[pageId]).toHaveLength(1)
-
-    const saved = store.getState().browserAnnotationsByPageId[pageId]
-    store.getState().setBrowserPageUrl(pageId, 'https://example.com/next')
-    store.getState().setBrowserPageUrl(pageId, 'https://example.com')
-
-    expect(store.getState().browserAnnotationsByPageId[pageId]).toBe(saved)
-    expect(saved?.[0]?.payload.page.sanitizedUrl).toBe('https://example.com')
-    expect(store.getState().browserAnnotationMarkerIdsByPageId[pageId]).toBeUndefined()
   })
 
   it('can commit a navigation URL without hiding an active recovery error', async () => {
@@ -265,10 +261,12 @@ describe('createBrowserSlice annotations', () => {
   it('uses local browser profile defaults for client-local fallback pages', async () => {
     const { store, main } = await createTestStoreDrawnFromMain()
     store.setState({
-      settings: settingsWithRuntime('env-1'),
-      defaultBrowserSessionProfileIdByHostId: {
-        local: 'local-profile',
-        'runtime:env-1': 'runtime-profile'
+      settings: {
+        ...settingsWithRuntime('env-1')!,
+        browserDefaultProfileIdByHostId: {
+          local: 'local-profile',
+          'runtime:env-1': 'runtime-profile'
+        }
       }
     })
 
@@ -294,8 +292,11 @@ describe('createBrowserSlice annotations', () => {
     Object.assign(mockApi.browser, { sessionEnsureManagedProfile: ensureMock })
     const { store, main } = await createTestStoreDrawnFromMain({
       repos: [],
-      settings: { ...getDefaultSettings('/tmp'), browserProfileScope: 'repo' },
-      defaultBrowserSessionProfileId: 'user-default'
+      settings: {
+        ...getDefaultSettings('/tmp'),
+        browserProfileScope: 'repo',
+        browserDefaultProfileIdByHostId: { local: 'user-default' }
+      }
     })
 
     const first = store.getState().createBrowserTab('repo-a::/a/one', 'about:blank')

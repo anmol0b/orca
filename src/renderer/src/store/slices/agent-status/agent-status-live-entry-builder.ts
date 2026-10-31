@@ -1,3 +1,4 @@
+import { canonicalOrchestrationForRow } from '@/runtime/visible-agent-orchestration'
 import { sameAgentStatusTerminalOwner } from '../../../../../shared/agent-status-terminal-owner'
 import type { AppState } from '../../types'
 import { resolveAgentStatusLiveEntryMainAgent } from './agent-status-live-entry-main-agent'
@@ -22,9 +23,9 @@ import type {
   AgentStatusRouting,
   AgentStatusTiming
 } from './agent-status-contract'
-import { registryEntryMatchesStatus } from '../agent-status-launch-config'
-import { findAgentPaneWorktreeId, getTabIdFromPaneKey } from '../agent-status-pane-key-tab-binding'
-import { mergeCurrentOrchestrationContext } from '../agent-status-orchestration-context'
+import { registryEntryMatchesStatus } from './agent-status-launch-config'
+import { findAgentPaneWorktreeId, getTabIdFromPaneKey } from './agent-status-pane-key-tab-binding'
+import { mergeCurrentOrchestrationContext } from './agent-status-orchestration-context'
 import { deriveAgentStatusLiveFacts } from './agent-status-live-facts'
 import { liveEntryChildFields } from './agent-status-live-entry-children'
 import {
@@ -141,7 +142,7 @@ export function buildAgentStatusLiveEntry(
   ) {
     return { entry: null, reason: 'suppressed-inherited-terminal' }
   }
-  const runtimeOrchestration = state.runtimeAgentOrchestrationByPaneKey[paneKey]
+  const runtimeOrchestration = canonicalOrchestrationForRow(state, paneKey)
   const runtimeMergedOrchestration = runtimeOrchestration
     ? mergeCurrentOrchestrationContext(existing?.orchestration, runtimeOrchestration)
     : undefined

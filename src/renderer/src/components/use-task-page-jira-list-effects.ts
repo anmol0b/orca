@@ -12,12 +12,12 @@ import {
   getTaskPageJiraStatusOrderRuntimeScopeKey,
   loadTaskPageJiraProjectStatusOrder
 } from '@/components/task-page-jira-status-order'
-import { createTaskPageJiraLoadFailureState } from '@/components/task-page-jira-load-state'
+import { createTaskPageJiraLoadFailureState } from '@/components/task-page/jira/task-page-jira-load-state'
 import { searchScopedTaskPageJiraIssues } from '@/components/task-page-jira-search'
 import { isBareJiraIssueNumber } from '../../../shared/jira/jira-search-input-jql'
 import { JIRA_ITEM_LIMIT } from './task-page/task-page-source-context'
 import { useTaskSearchDebouncedApply } from './task-page/use-task-search-debounced-apply'
-import { readLinkedJiraIssues } from './task-page-jira-linked-issues'
+import { readLinkedJiraIssues } from './task-page/jira/task-page-jira-linked-issues'
 import { ipcOrRuntimeTargetForHostId } from '@/runtime/runtime-client-target'
 import { buildJiraPresetJql } from '../../../shared/jira/jira-preset-jql'
 import { restrictJiraQueryToProject } from '../../../shared/jira/jira-project-reference'
