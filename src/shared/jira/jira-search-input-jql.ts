@@ -28,27 +28,35 @@ export function isBareJiraIssueNumber(input: string): boolean {
   return /^\d+$/.test(input.trim())
 }
 
+/** Issue keys the input names: itself when key-shaped, or a bare number within each of `projectKeys`. */
+export function listJiraIssueKeyCandidates(
+  input: string,
+  projectKeys: readonly string[] = []
+): string[] {
+  const trimmed = input.trim()
+  const candidates = isBareJiraIssueNumber(trimmed)
+    ? projectKeys.map((projectKey) => `${projectKey}-${trimmed}`)
+    : [trimmed]
+  return [
+    ...new Set(
+      candidates.filter((key) => JIRA_ISSUE_KEY_PATTERN.test(key)).map((key) => key.toUpperCase())
+    )
+  ]
+}
+
+export function buildJiraIssueKeysJql(keys: readonly string[]): string {
+  return keys.length === 1
+    ? `key = "${keys[0]}"`
+    : `key in (${keys.map((key) => `"${key}"`).join(', ')})`
+}
+
 /** Exact-issue-key JQL when the input is key-shaped, or a bare number within each of `projectKeys`. */
 export function buildJiraIssueKeyJql(
   input: string,
   projectKeys: readonly string[] = []
 ): string | null {
-  const trimmed = input.trim()
-  const candidates = isBareJiraIssueNumber(trimmed)
-    ? projectKeys.map((projectKey) => `${projectKey}-${trimmed}`)
-    : [trimmed]
-  const keys = [
-    ...new Set(
-      candidates.filter((key) => JIRA_ISSUE_KEY_PATTERN.test(key)).map((key) => key.toUpperCase())
-    )
-  ]
-  if (keys.length === 0) {
-    return null
-  }
-  // Why: Jira Cloud skips missing keys in `key in`; Server may 400, which falls back to text search.
-  return keys.length === 1
-    ? `key = "${keys[0]}"`
-    : `key in (${keys.map((key) => `"${key}"`).join(', ')})`
+  const keys = listJiraIssueKeyCandidates(input, projectKeys)
+  return keys.length > 0 ? buildJiraIssueKeysJql(keys) : null
 }
 
 /** Search issue text, ignoring key shape. Empty when no searchable words remain. */

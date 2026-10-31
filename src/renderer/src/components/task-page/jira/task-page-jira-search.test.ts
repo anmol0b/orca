@@ -66,6 +66,22 @@ describe('searchTaskPageJiraIssues', () => {
     expect(search.mock.calls).toEqual([['key = "ABC-999"'], ['text ~ "abc 999*"']])
   })
 
+  it('retries a multi-project lookup without the keys Jira says are missing', async () => {
+    const search = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Error 400: An issue with key 'BET-400' does not exist for field 'key'.")
+      )
+      .mockResolvedValueOnce([ISSUE])
+    await expect(
+      searchTaskPageJiraIssues('400', search, 'input', ['ALP', 'BET', 'CAT'])
+    ).resolves.toEqual({ issues: [ISSUE], jqlRejection: null })
+    expect(search.mock.calls).toEqual([
+      ['key in ("ALP-400", "BET-400", "CAT-400")'],
+      ['key in ("ALP-400", "CAT-400")']
+    ])
+  })
+
   it('does not mask a key lookup that failed for another reason', async () => {
     const error = new Error('Error 403: Forbidden')
     const search = vi.fn().mockRejectedValue(error)
